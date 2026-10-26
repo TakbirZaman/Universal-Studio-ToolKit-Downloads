@@ -1,0 +1,54 @@
+name: Import verified development installers
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bootstrap-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: import-dev-1f50491c
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      DOWNLOAD_ORIGIN: https://universal-studio-downloads.ablebee3.chatgpt.site
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Import installers, verify hashes and publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          dist="$RUNNER_TEMP/installers"
+          mkdir -p "$dist"
+          curl --fail --location --retry 3 "$DOWNLOAD_ORIGIN/windows" --output "$dist/Universal-Studio-Toolkit-1f50491c-Windows.zip"
+          curl --fail --location --retry 3 "$DOWNLOAD_ORIGIN/linux" --output "$dist/Universal-Studio-Toolkit-1f50491c-Linux.tar.gz"
+          curl --fail --location --retry 3 "$DOWNLOAD_ORIGIN/android" --output "$dist/Universal-Studio-Toolkit-1f50491c-Android.apk"
+          curl --fail --location --retry 3 "$DOWNLOAD_ORIGIN/installation.txt" --output "$dist/INSTALL.txt"
+          cd "$dist"
+          cat > expected.sha256 <<'SUMS'
+          322808083ef5ee9db21dcaf6197330d720ee53723078798239da7d255fc56102  Universal-Studio-Toolkit-1f50491c-Windows.zip
+          3dbe520d83dfdbec01ecc8f7d0487e3f738b20c7fae8c782498c087ea5df31ce  Universal-Studio-Toolkit-1f50491c-Linux.tar.gz
+          7bec53ffab92c56ca7009d4daacd9ec847d86f6b402e092aa56eaa2722e6a364  Universal-Studio-Toolkit-1f50491c-Android.apk
+          SUMS
+          sha256sum --check expected.sha256
+          rm expected.sha256
+          sha256sum *.zip *.tar.gz *.apk INSTALL.txt > SHA256SUMS
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          Verified Windows x64, Linux x64 and Android ARM64 development installers.
+
+          Read INSTALL.txt and verify downloaded files against SHA256SUMS. Android keys are disposable development identities; export presets and scan drafts before uninstalling an older build. Keep all bundled licenses and third-party notices.
+
+          These are development previews. Production signing and clean-device acceptance remain unfinished. Application source code is not included in this downloads repository.
+          NOTES
+          gh release create dev-1f50491c "$dist/"* \
+            --repo "$GH_REPO" --target "$GITHUB_SHA" \
+            --prerelease --latest=false \
+            --title 'Universal Studio Toolkit — development preview' \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
